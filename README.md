@@ -1,5 +1,5 @@
 
-Python libraries for cite checking legal cases
+Python libraries for cite checking legal documents
 
 case_lookup.py:
 -takes as input a search query and returns the case text as HTML
