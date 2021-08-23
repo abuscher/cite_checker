@@ -1,7 +1,8 @@
 import docx
-from case_lookup import case_lookup
+from case_lookup import case_lookup, usc_html_from_web
 from docx2python import docx2python
 import re
+from collections import OrderedDict
 
 
 class Case:
@@ -55,7 +56,7 @@ def match_to_case(prefix, pincite, case_bank):
 
 alphabets= "([A-Za-z])"
 prefixes = "(Mr|St|Mrs|Ms|Dr|Prof|Capt|Cpt|Lt|Mt)[.]"
-cases = "(Id|id|App|Cal|S|Ct|So|Wash|F|Supp|A|R|D)[.]"
+cases = "(Id|id|App|Cal|S|Ct|So|Wash|F|Supp|A|R|D|C)[.]"
 suffixes = "(Inc|Ltd|Jr|Sr|Co)"
 starters = "(Mr|Mrs|Ms|Dr|He\s|She\s|It\s|They\s|Their\s|Our\s|We\s|But\s|However\s|That\s|This\s|Wherever)"
 acronyms = "([A-Z][.][A-Z][.](?:[A-Z][.])?)"
@@ -101,31 +102,33 @@ def read_doc(file_name):
 
 
 def get_citations(doc):
-    regex_strings = {
-    r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+,\s[0-9]+-[0-9]+':'long-range',  # 23 cal. app. 4th 23, 23-24 #FULL
-    r'[0-9]+\s[^0-9].*[^0-9]\sat\s[0-9]+-[0-9]+':'short-range',      # 23 cal. app. 4th at 23-24
-    r'[iI]d\.\sat\s[0-9]+-[0-9]+':'id-range',                            # Id. at 23-24
+    regex_strings = OrderedDict([
+        (r'[0-9]+\sU[. ]*S[. ]*C[. §]*\s[0-9]+','usc'),                    # USC
 
-    r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+,\s[0-9]+':'long',  # 23 cal. app. 4th 23, 24 #FULL
-    r'[0-9]+\s[^0-9].*[^0-9]\sat\s[0-9]+':'short',      # 23 cal. app. 4th at 23
-    r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+':'no-pin',         # 23 cal. app. 4th 23 #FULL
-    r'Id\.\sat\s[0-9]+':'id',                            # Id. at 23
-    r'[Ii]d\.': 'id-same',  # Id. at 23
-    }
+        (r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+,\s[0-9]+-[0-9]+','long-range'),  # 23 cal. app. 4th 23, 23-24 #FULL
+        (r'[0-9]+\s[^0-9].*[^0-9]\sat\s[0-9]+-[0-9]+','short-range'),      # 23 cal. app. 4th at 23-24
+        (r'[iI]d\.\sat\s[0-9]+-[0-9]+','id-range'),                        # Id. at 23-24
+
+        (r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+,\s[0-9]+','long'),  # 23 cal. app. 4th 23, 24 #FULL
+        (r'[0-9]+\s[^0-9].*[^0-9]\sat\s[0-9]+','short'),      # 23 cal. app. 4th at 23
+        (r'[0-9]+\s[^0-9].*[^0-9]\s[0-9]+','no-pin'),         # 23 cal. app. 4th 23 #FULL
+        (r'Id\.\sat\s[0-9]+','id'),                           # Id. at 23
+        (r'[Ii]d\.', 'id-same')])                            # Id. at 23
 
     case_bank = []
     all_cases = []
-    active_case = 'null'
     active_index = -1
     active_pin = -1
 
     left_full = ''
     right_full = ''
 
+    #print(doc.footnotes[0][0][0])
     for paragraph in doc.body[0][0][0]:
         input_text = paragraph
         citation_html = {} #key is index-page, value is html
 
+        #insert footnotes into the paragraph
         match = re.findall('----footnote(\d+)----', input_text)
         if match:
             for fn in match:
@@ -135,42 +138,70 @@ def get_citations(doc):
                 input_text = input_text.replace(old_text, replace_text)
         final_text = input_text
 
-        for sentence in split_into_sentences(input_text):
 
+        for sentence in split_into_sentences(input_text):
             save_cite = True
             if "quoting" in sentence or "citing" in sentence:
                 save_cite = False
 
-            for regex_string in regex_strings:
+            for regex_string in regex_strings.keys():
+                found = False
                 re_match = re.findall(regex_string, sentence)
                 if re_match:
-                    for x in re_match:
+                    for match_text in re_match:
+                        if regex_strings[regex_string] == 'usc':
+
+                            first = re.match(r'\s*\d+', match_text).group()
+                            last = re.search(r'\d+$', match_text).group()
+                            page_html, start_url = usc_html_from_web(first, last)
+                            key = "" + str(first) + "-usc-" + str(last)
+                            if key not in citation_html:
+                                page_html = str(page_html).replace('href', 'style="pointer-events: none;" href')
+                                citation_html[key] = "<h4><a target='_blank' href='" + str(start_url) + "'>" \
+                                                     +str(first) + " U.S. Code Section "+ str(last) + "</a></h4>" + page_html
+
+                            # Make New Citation
+                            new_cite_text = '<a href="javascript:void(0);" class="cite-link" onclick=\'citationChangeOption("' \
+                                            + key \
+                                            + '")\'>' + match_text \
+                                            + '</a>'
+
+                            final_text = final_text.replace(match_text, new_cite_text)
+                            sentence = sentence.replace(match_text, '')
+                            continue
+
+                        if regex_strings[regex_string] in {"cal-pen", "cal-civ", "cal-bpc", "cal-evid"}:
+                            pass
+
+                        if regex_strings[regex_string] in {"fre", "frcp", "cfr"}:
+                            pass
+
                         if regex_strings[regex_string] in {"long-range", 'long', 'no-pin'}:
                             #TODO throw a warning for multiple long
                             #TODO change to "try" and throw error for poorly formed cite
 
                             try:
-                                if x.find(',') > -1 and regex_strings[regex_string] in {"long-range", 'long'}:
-                                    lookup_text=x[0:x.find(',')]
+                                if match_text.find(',') > -1 and regex_strings[regex_string] in {"long-range", 'long'}:
+                                    lookup_text=match_text[0:match_text.find(',')]
                                 else:
-                                    lookup_text=x
+                                    lookup_text=match_text
                                 case_bank.append(Case(lookup_text))
                             except:
                                 pass
 
                         #Get pincite and prefix
-                        if x.find(',') > -1:
-                            pincite = re.search(r'\d+', x[x.find(','):]).group()
-                            prefix = x[0:x.find(',')]
+                        if match_text.find(',') > -1:
+                            pincite = re.search(r'\d+', match_text[match_text.find(','):]).group()
+                            prefix = match_text[0:match_text.find(',')]
                             t = prefix.strip().split(" ")
                             prefix = ''.join(t[:-1])
-                        elif x.find('at') > -1:
-                            pincite = re.search(r'\d+', x[x.find('at'):]).group()
-                            prefix = x[0:x.find('at')].replace(' ','')
+                        elif match_text.find('at') > -1:
+                            pincite = re.search(r'\d+', match_text[match_text.find('at'):]).group()
+                            prefix = match_text[0:match_text.find('at')].replace(' ','')
                         elif regex_strings[regex_string] == "id-same":
                             pincite = active_pin
                         else:
-                            prefix = x
+                            prefix = match_text
                             t = prefix.strip().split(" ")
                             prefix = ''.join(t[:-1])
                             pincite = t[-1]
@@ -186,7 +217,7 @@ def get_citations(doc):
                                 active_case = prefix
                                 active_index = case_index
 
-                        sentence = sentence.replace(x, '')
+                        sentence = sentence.replace(match_text, '')
                         if case_index == -1:
                             continue
 
@@ -199,11 +230,11 @@ def get_citations(doc):
                         # Make New Citation
                         new_cite_text = '<a href="javascript:void(0);" class="cite-link" onclick=\'citationChangeOption("'\
                                         + key\
-                                        + '")\'>' + x \
+                                        + '")\'>' + match_text \
                                         + '</a>'
 
-                        final_text = final_text.replace(x, new_cite_text)
-                        all_cases.append(Citation(x, pincite))
+                        final_text = final_text.replace(match_text, new_cite_text)
+                        all_cases.append(Citation(match_text, pincite))
 
 
         right_html=''
@@ -221,8 +252,8 @@ def get_citations(doc):
 
 
 def main():
-    file_name = 'test_doc_2.docx'
-    #file_name = 'test_doc_1.docx'
+    file_name = 'test_doc_3.docx'
+    file_name = 'test_doc_1.docx'
 
     doc_result = docx2python(file_name)
     left_full, right_full = get_citations(doc_result)
@@ -239,3 +270,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

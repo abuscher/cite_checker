@@ -1,4 +1,5 @@
-Python libraries for cite checking legal documents.
+
+Python libraries for cite-checking legal citations
 
 case_lookup.py:
 - takes as input a search query and returns the case text as HTML
@@ -6,5 +7,6 @@ case_lookup.py:
 
 word_doc.py:
 - Takes a word document file name as input (see test_doc_1.docx and test_doc_2.docx).
-- Outputs two HTML files: left.html is the original text marked up with links. and right.html is the page number of the cited case.
+- Outputs two HTML files: left.html is the original text marked up with links. and right.html.
 - See examples at https://austinbuscher.com/citechecker/
+
